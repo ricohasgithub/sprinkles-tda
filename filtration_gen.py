@@ -124,7 +124,7 @@ def build_simplex_tree_filtration(Hx, Hz, filtration):
         if degree == 0:
             vertex_stream.append([id])
         elif degree == 1:
-            vertex_stream.append(list(np.where(Hz_t[id] == 1)))
+            vertex_stream.append(list(np.where(Hz_t[id] == 1)[0]))
         elif degree == 2:
             # First triangulate cell
             # Compute all vertices of cell
@@ -156,8 +156,10 @@ filtration = sample_filtration(Hx, Hz)
 st_filtration = build_simplex_tree_filtration(Hx, Hz, filtration)
 
 st = gudhi.SimplexTree()
+t = 0.0
 for simplex in st_filtration:
-    st.insert(simplex)
+    st.insert(simplex, t)
+    t += 1.0
 
 print(st.dimension())
 print(st.num_simplices())
