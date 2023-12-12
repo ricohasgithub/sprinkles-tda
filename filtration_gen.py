@@ -1,8 +1,10 @@
 
 import random
+from copy import deepcopy
 from collections import defaultdict
 
 import numpy as np
+import gudhi
 
 # Hx, m x n: maps from faces to edges
 # Hz, m x n: maps from vertices to edges
@@ -61,7 +63,6 @@ class SampleQueue:
         self.Hz_t[:, r_x] = 0
         return (0, r_x)
 
-
 def TS3(Hx, Hz):
 
     # Idea: perform a topological sort of the 2-simplex
@@ -109,11 +110,37 @@ def TS3(Hx, Hz):
 
 def sample_filtration(Hx, Hz):
     filtration = []
-    SQ = SampleQueue(Hx, Hz.T)
+    SQ = SampleQueue(deepcopy(Hx), deepcopy(Hz.T))
     while not SQ.is_empty():
         sample = SQ.sample()
         filtration.append(sample)
     return filtration
+
+def build_simplex_tree_filtration(Hx, Hz, filtration):
+    Hz_t = Hz.T
+    vertex_stream = []
+    for simplex in filtration:
+        degree, id = simplex
+        if degree == 0:
+            vertex_stream.append([id])
+        elif degree == 1:
+            vertex_stream.append(list(np.where(Hz_t[id] == 1)))
+        elif degree == 2:
+            # First triangulate cell
+            # Compute all vertices of cell
+            all_vertices = set()
+            for i, edge in enumerate(Hx[id]):
+                if edge == 1:
+                    vertices = list(np.where(Hz_t[i] == 1)[0])
+                    for vertex in vertices:
+                        all_vertices.add(vertex)
+            all_vertices = list(all_vertices)
+            # Flip a random vertex to be 0 such that we have a set of size 3
+            # Maybe do n choose 3?
+            subset = random.sample(all_vertices, 3)
+            vertex_stream.append(subset)
+    return filtration
+    
 
 Hx = np.array([[1, 1, 0, 0, 1, 0, 1, 0],
                [1, 1, 0, 0, 0, 1, 0, 1],
@@ -125,4 +152,20 @@ Hz = np.array([[1, 0, 1, 0, 1, 1, 0, 0],
                [0, 1, 0, 1, 0, 0, 1, 1]])
 
 print(TS3(Hx, Hz))
-print(sample_filtration(Hx, Hz))
+filtration = sample_filtration(Hx, Hz)
+st_filtration = build_simplex_tree_filtration(Hx, Hz, filtration)
+
+st = gudhi.SimplexTree()
+for simplex in st_filtration:
+    st.insert(simplex)
+
+print(st.dimension())
+print(st.num_simplices())
+print(st.num_vertices())
+
+# Compute persistence
+diag = st.persistence()
+
+# Plotting the persistence diagram
+gudhi.plot_persistence_diagram(diag)
+st.betti_numbers()
