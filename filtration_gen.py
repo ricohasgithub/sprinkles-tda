@@ -6,6 +6,8 @@ from collections import defaultdict
 import numpy as np
 import gudhi
 
+K = 8
+
 # Hx, m x n: maps from faces to edges
 # Hz, m x n: maps from vertices to edges
 
@@ -63,51 +65,6 @@ class SampleQueue:
         self.Hz_t[:, r_x] = 0
         return (0, r_x)
 
-def TS3(Hx, Hz):
-
-    # Idea: perform a topological sort of the 2-simplex
-    # We represent the 2-simplex as a directed graph, whereby vertices have indegree 0
-    # edges have indegree 2, and faces have indegree 4
-    # The topological sort defines a boundary for which we can perform a filtration
-
-    # Graph building
-    graph = defaultdict(list)
-    indegrees = defaultdict(int)
-    # Iterate over all vertex to edge mappings
-    for i in range(len(Hz)):
-        # Degree of simplex (0 for vertex, 1 for edge, 2 for face), index of topological feature
-        for j in range(len(Hz[0])):
-            if Hz[i][j] == 1:
-                # The current vertex i is a boundary of edge j
-                graph[(0, i)].append((1, j))
-                indegrees[(1, j)] += 1
-
-    # Iterate over all face to edge mappings
-    for i in range(len(Hx)):
-        for j in range(len(Hx[0])):
-            # The current face i has boundary edge j
-            if Hx[i][j] == 1:
-                graph[(1, j)].append((2, i))
-                indegrees[(2, i)] += 1
-
-    # Collect all degree 0 nods in topological dependency graph (aka all vertices)
-    queue = [(0, i) for i in range(len(Hz))]
-    # Permute the queue into a random order
-    queue = random.sample(queue, len(queue))
-
-    filtration = []
-
-    # Perform a topological sort
-    while len(queue) > 0:
-        curr = queue.pop(0)
-        filtration.append(curr)
-        for next in graph[curr]:
-            indegrees[next] -= 1
-            if indegrees[next] == 0:
-                queue.append(next)
-
-    return filtration
-
 def sample_filtration(Hx, Hz):
     filtration = []
     SQ = SampleQueue(deepcopy(Hx), deepcopy(Hz.T))
@@ -116,7 +73,7 @@ def sample_filtration(Hx, Hz):
         filtration.append(sample)
     return filtration
 
-def build_simplex_tree_filtration(Hx, Hz, filtration):
+def build_simplex_tree_filtration(Hx, Hz, filtration, sample=True):
     Hz_t = Hz.T
     vertex_stream = []
     for simplex in filtration:
@@ -129,45 +86,101 @@ def build_simplex_tree_filtration(Hx, Hz, filtration):
             # First triangulate cell
             # Compute all vertices of cell
             all_vertices = set()
-            for i, edge in enumerate(Hx[id]):
-                if edge == 1:
+            edges = []
+            for i, edge_val in enumerate(Hx[id]):
+                if edge_val == 1:
+                    print(Hz_t[i])
                     vertices = list(np.where(Hz_t[i] == 1)[0])
+                    edge = []
                     for vertex in vertices:
                         all_vertices.add(vertex)
+                        edge.append(vertex)
+                    edges.append(edge)
             all_vertices = list(all_vertices)
             # Flip a random vertex to be 0 such that we have a set of size 3
             # Maybe do n choose 3?
-            subset = random.sample(all_vertices, 3)
-            vertex_stream.append(subset)
-    return filtration
+            if sample:
+                for _ in range(K):
+                    subset = random.sample(all_vertices, 3)
+                    vertex_stream.append(subset)
+            else:
+                edge_path, start = compute_edge_path(edges, len(all_vertices))
+                for edge in edge_path:
+                    vertex_stream.append([start] + edge)
+    return vertex_stream
+
+def compute_edge_path(edges, num_vertices):
+
+    start = edges[0][0]
+    graph = {}
+    for u, v in edges:
+        if u not in graph:
+            graph[u] = []
+        if v not in graph:
+            graph[v] = []
+        graph[u].append(v)
+        graph[v].append(u)
+
+    # Initialize a stack for DFS
+    stack = [(start, [start])]
+
+    # Initialize a set to keep track of visited vertices
+    visited = set()
+
+    while stack:
+        current_vertex, path = stack.pop()
+
+        # Mark the current vertex as visited
+        visited.add(current_vertex)
+
+        if len(path) == num_vertices:
+            # If all vertices have been reached
+            break
+
+        # Explore adjacent vertices
+        for neighbor in graph[current_vertex]:
+            if neighbor not in visited:
+                # Push the neighbor onto the stack along with the updated path
+                stack.append((neighbor, path + [neighbor]))
+    
+    # Initialize an empty list to store the pairs
+    pairs_list = []
+
+    # Iterate through the input list to create pairs
+    for i in range(len(path) - 1):
+        pairs_list.append([path[i], path[i + 1]])
+
+    # Remove first edge containing the start vertex (the first edge)
+    pairs_list.pop(0)
+    return pairs_list, start
     
 
-Hx = np.array([[1, 1, 0, 0, 1, 0, 1, 0],
-               [1, 1, 0, 0, 0, 1, 0, 1],
-               [0, 0, 1, 1, 1, 0, 1, 0],
-               [0, 0, 1, 1, 0, 1, 0, 1]])
-Hz = np.array([[1, 0, 1, 0, 1, 1, 0, 0],
-               [0, 1, 0, 1, 1, 1, 0, 0],
-               [1, 0, 1, 0, 0, 0, 1, 1],
-               [0, 1, 0, 1, 0, 0, 1, 1]])
+# Hx = np.array([[1, 1, 0, 0, 1, 0, 1, 0],
+#                [1, 1, 0, 0, 0, 1, 0, 1],
+#                [0, 0, 1, 1, 1, 0, 1, 0],
+#                [0, 0, 1, 1, 0, 1, 0, 1]])
+# Hz = np.array([[1, 0, 1, 0, 1, 1, 0, 0],
+#                [0, 1, 0, 1, 1, 1, 0, 0],
+#                [1, 0, 1, 0, 0, 0, 1, 1],
+#                [0, 1, 0, 1, 0, 0, 1, 1]])
 
-print(TS3(Hx, Hz))
-filtration = sample_filtration(Hx, Hz)
-st_filtration = build_simplex_tree_filtration(Hx, Hz, filtration)
+# print(TS3(Hx, Hz))
+# filtration = sample_filtration(Hx, Hz)
+# st_filtration = build_simplex_tree_filtration(Hx, Hz, filtration)
 
-st = gudhi.SimplexTree()
-t = 0.0
-for simplex in st_filtration:
-    st.insert(simplex, t)
-    t += 1.0
+# st = gudhi.SimplexTree()
+# t = 0.0
+# for simplex in st_filtration:
+#     st.insert(simplex, t)
+#     t += 1.0
 
-print(st.dimension())
-print(st.num_simplices())
-print(st.num_vertices())
+# print(st.dimension())
+# print(st.num_simplices())
+# print(st.num_vertices())
 
-# Compute persistence
-diag = st.persistence()
+# # Compute persistence
+# diag = st.persistence()
 
-# Plotting the persistence diagram
-gudhi.plot_persistence_diagram(diag)
-st.betti_numbers()
+# # Plotting the persistence diagram
+# gudhi.plot_persistence_diagram(diag)
+# st.betti_numbers()
