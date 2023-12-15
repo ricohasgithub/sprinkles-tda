@@ -4,7 +4,6 @@ from copy import deepcopy
 from collections import defaultdict
 
 import numpy as np
-import gudhi
 
 K = 8
 
