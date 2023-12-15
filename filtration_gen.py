@@ -3,7 +3,7 @@ import random
 from copy import deepcopy
 from collections import defaultdict
 
-import numpy as np
+import numpy as np 
 
 K = 8
 
